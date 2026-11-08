@@ -291,8 +291,9 @@ def _cache_key(spec: TokenExchangeSpec) -> str:
 def _shares_one_assertion_across_workers(spec: TokenExchangeSpec) -> bool:
     """The store exists so the workers reading one projected token file don't each spend that file's
     single-use ``jti``. A source that mints its own assertion per exchange shares nothing with another
-    worker, so it never reads the store, never finds a hit there, and keeps its minted token off disk."""
-    return spec.assertion_source is None
+    worker, so it never reads the store, never finds a hit there, and keeps its minted token off disk.
+    Google metadata assertions are replayable and must also bypass stored tokens during refresh."""
+    return spec.assertion_source is None and not spec.assertion_ref.startswith("oidc/google/")
 
 
 def _assertion_digest(assertion: SecretStr) -> str:

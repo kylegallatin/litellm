@@ -452,6 +452,25 @@ class TestResolutionMatrix:
         assert params.service_account_id is None
         assert params.workspace_id is None
 
+    @pytest.mark.parametrize("reference", ["oidc/google/https://api.anthropic.com", "oidc/env/EXTERNAL_JWT"])
+    def test_env_oidc_reference_is_resolved_as_a_source(self, monkeypatch: pytest.MonkeyPatch, reference: str):
+        monkeypatch.setenv("ANTHROPIC_FEDERATION_RULE_ID", "fdrl_env")
+        monkeypatch.setenv("ANTHROPIC_ORGANIZATION_ID", "org-env")
+        monkeypatch.setenv("ANTHROPIC_IDENTITY_TOKEN", reference)
+
+        params: Final = resolve_anthropic_wif_params(None)
+
+        assert params is not None
+        assert params.assertion_ref == reference
+
+    def test_env_unsafe_oidc_reference_is_rejected(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("ANTHROPIC_FEDERATION_RULE_ID", "fdrl_env")
+        monkeypatch.setenv("ANTHROPIC_ORGANIZATION_ID", "org-env")
+        monkeypatch.setenv("ANTHROPIC_IDENTITY_TOKEN", "oidc/env_path/UNTRUSTED_PATH")
+
+        with pytest.raises(litellm.AuthenticationError, match="Raw identity tokens and oidc/env_path/"):
+            resolve_anthropic_wif_params(None)
+
     def test_file_param_beats_inline_param(self):
         params = resolve_anthropic_wif_params(
             {
