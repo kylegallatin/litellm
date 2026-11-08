@@ -1,20 +1,21 @@
 import asyncio
-import concurrent.futures
 import base64
+import concurrent.futures
 import json
-from urllib.parse import quote, urlencode
 import logging
 import threading
 import time
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from types import MappingProxyType
 from typing import Final
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote, urlencode
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
+from litellm.llms.base_llm.auth.shared_token_store import FileTokenStore
 from litellm.llms.base_llm.auth.token_exchange import (
     _METRICS_QUEUE_LIMIT,
     _REDACTION_CAP,
@@ -1805,3 +1806,28 @@ class TestServiceLoggingMetricsSink:
         assert hooks.attempts == ["success:cold_mint", "success:cache_hit", "failure:cold_mint"], (
             "every event is still handed to the hooks, and one raising hook does not stop the next"
         )
+
+
+def test_google_metadata_reference_refreshes_before_expiry_with_shared_store(tmp_path: Path) -> None:
+    reference: Final = "oidc/google/https://api.anthropic.com"
+    poster: Final = ScriptedPoster([token_response("first", expires_in=600), token_response("second", expires_in=600)])
+    clock: Final = FakeClock()
+    wall: Final = FakeClock(1_700_000_000.0)
+    engine: Final = JwtBearerTokenExchangeEngine(
+        poster=poster,
+        assertion_reader={reference: DEFAULT_ASSERTION}.get,
+        clock=clock,
+        wall_clock=wall,
+        shared_store=FileTokenStore(tmp_path),
+        refresh_executor=ManualExecutor(),
+        metrics_sink=RecordingMetricsSink(),
+    )
+    spec: Final = make_spec(assertion_ref=reference)
+    first: Final = mint(engine, spec)
+    clock.advance(580)
+    wall.advance(580)
+    refreshed: Final = mint(engine, spec)
+
+    assert refreshed.access_token != first.access_token
+    assert refreshed.expires_at == pytest.approx(clock() + 600)
+    assert len(poster.requests) == 2

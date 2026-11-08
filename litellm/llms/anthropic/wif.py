@@ -552,7 +552,10 @@ def _resolve_assertion_ref(litellm_params: Mapping[str, object] | None) -> str |
     file_env: Final = _env_str("ANTHROPIC_IDENTITY_TOKEN_FILE")
     if file_env is not None:
         return f"oidc/file/{file_env}"
-    if _env_str(_INLINE_ENV_VAR) is not None:
+    env_token: Final = _env_str(_INLINE_ENV_VAR)
+    if env_token is not None:
+        if env_token.startswith(_ACCEPTED_REF_PREFIX):
+            return _validated_inline_ref(env_token)
         return f"oidc/env/{_INLINE_ENV_VAR}"
     return None
 
